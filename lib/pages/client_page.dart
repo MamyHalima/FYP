@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
 import '../api_service.dart';
 
@@ -29,6 +30,7 @@ class _ClientPageState extends State<ClientPage> {
 
   Map<String, dynamic>? _constructorProfile;
   File? _profileImage;
+  String? _profileBase64;
   bool _isEditingProfile = false;
 
   @override
@@ -37,6 +39,7 @@ class _ClientPageState extends State<ClientPage> {
     _loadProjects();
     _loadConstructors();
     _loadClientProfile();
+    _loadProfilePicture();
   }
 
   void _loadProjects() async {
@@ -49,10 +52,15 @@ class _ClientPageState extends State<ClientPage> {
   void _loadConstructors() async {
     final data = await ApiService.fetchAllConstructors();
     setState(() {
-      _constructors = data.map<Map<String, String>>((e) => {
-        'username': e['username'] ?? '',
-        'fullName': e['fullName'] ?? '',
-      }).toList();
+      _constructors = data
+          .where((e) =>
+              e['fullName'] != null &&
+              e['fullName'].toString().trim().isNotEmpty)
+          .map<Map<String, String>>((e) => {
+                'username': e['username'] ?? '',
+                'fullName': e['fullName'] ?? '',
+              })
+          .toList();
     });
   }
 
@@ -73,6 +81,13 @@ class _ClientPageState extends State<ClientPage> {
         _bioController.text = data['bio'] ?? '';
       });
     }
+  }
+
+  void _loadProfilePicture() async {
+    final base64 = await ApiService.fetchProfilePicture(widget.clientName);
+    setState(() {
+      _profileBase64 = base64;
+    });
   }
 
   void _submitProject() async {
@@ -98,7 +113,6 @@ class _ClientPageState extends State<ClientPage> {
       'contact': _contactController.text,
       'address': _addressController.text,
       'bio': _bioController.text,
-      // Optional: handle image upload here
     });
     if (success) {
       setState(() => _isEditingProfile = false);
@@ -118,7 +132,45 @@ class _ClientPageState extends State<ClientPage> {
       setState(() {
         _profileImage = File(picked.path);
       });
-      // Optional: upload image to backend
+      final uploaded = await api.uploadProfilePicture(widget.clientName, _profileImage!);
+      if (uploaded) {
+        _loadProfilePicture();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile picture uploaded!')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to upload picture!')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Delete Account"),
+        content: const Text("Are you sure you want to delete your account? This action cannot be undone."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final deleted = await api.deleteAccount(widget.clientName);
+      if (deleted) {
+        // You may want to redirect to login or home page
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account deleted!')),
+        );
+        // Navigator.of(context).pushReplacement(...);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete account!')),
+        );
+      }
     }
   }
 
@@ -134,7 +186,7 @@ class _ClientPageState extends State<ClientPage> {
                 ? _constructors.map((constructor) {
                     return DropdownMenuItem(
                       value: constructor,
-                      child: Text(constructor['fullName'] ?? ''),
+                      child: Text(constructor['fullName'] ?? constructor['username'] ?? ''),
                     );
                   }).toList()
                 : [
@@ -159,7 +211,19 @@ class _ClientPageState extends State<ClientPage> {
             Card(
               elevation: 2,
               child: ListTile(
-                title: Text(_constructorProfile!['fullName'] ?? ''),
+                leading: FutureBuilder<String?>(
+                  future: ApiService.fetchProfilePicture(_constructorProfile!['username']),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasData && snapshot.data != null && snapshot.data!.isNotEmpty) {
+                      return CircleAvatar(
+                        backgroundImage: MemoryImage(base64Decode(snapshot.data!)),
+                        radius: 24,
+                      );
+                    }
+                    return const CircleAvatar(child: Icon(Icons.person));
+                  },
+                ),
+                title: Text(_constructorProfile!['fullName'] ?? _constructorProfile!['username'] ?? ''),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -217,8 +281,14 @@ class _ClientPageState extends State<ClientPage> {
         children: [
           CircleAvatar(
             radius: 50,
-            backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null,
-            child: _profileImage == null ? const Icon(Icons.person, size: 50) : null,
+            backgroundImage: _profileImage != null
+                ? FileImage(_profileImage!)
+                : (_profileBase64 != null && _profileBase64!.isNotEmpty
+                    ? MemoryImage(base64Decode(_profileBase64!))
+                    : null) as ImageProvider<Object>?,
+            child: (_profileImage == null && (_profileBase64 == null || _profileBase64!.isEmpty))
+                ? const Icon(Icons.person, size: 50)
+                : null,
           ),
           TextButton.icon(
             icon: const Icon(Icons.upload),
@@ -271,6 +341,13 @@ class _ClientPageState extends State<ClientPage> {
                 ),
               ],
             ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            label: const Text("Delete Account", style: TextStyle(color: Colors.red)),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.white),
+            onPressed: _deleteAccount,
+          ),
         ],
       ),
     );

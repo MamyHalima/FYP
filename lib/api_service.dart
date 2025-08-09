@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'dart:io';
 
 class ApiService {
   static const String base = 'http://192.168.43.35:8080/api';
@@ -119,8 +120,39 @@ class ApiService {
     final res = await http.get(Uri.parse('$base/user/constructors'));
     if (res.statusCode == 200) {
       final List data = jsonDecode(res.body);
-      return data.map((e) => Map<String, String>.from(e)).toList();
+      return data.map((e) => {
+        'username': e['username']?.toString() ?? '',
+        'fullName': e['fullName']?.toString() ?? '',
+      }).toList();
     }
     return [];
+  }
+
+  // ----------- PROFILE PICTURE & DELETE ACCOUNT METHODS -----------
+
+  /// Upload profile picture (Base64 string)
+  Future<bool> uploadProfilePicture(String username, File imageFile) async {
+    var request = http.MultipartRequest(
+      'PUT',
+      Uri.parse('$base/user/$username/profile-picture'),
+    );
+    request.files.add(await http.MultipartFile.fromPath('file', imageFile.path));
+    var response = await request.send();
+    return response.statusCode == 200;
+  }
+
+  /// Get profile picture (returns base64 string)
+  static Future<String?> fetchProfilePicture(String username) async {
+    final res = await http.get(Uri.parse('$base/user/$username/profile-picture'));
+    if (res.statusCode == 200) {
+      return res.body;
+    }
+    return null;
+  }
+
+  /// Delete account
+  Future<bool> deleteAccount(String username) async {
+    final res = await http.delete(Uri.parse('$base/user/$username'));
+    return res.statusCode == 200;
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
 import '../api_service.dart';
 
@@ -26,6 +27,7 @@ class _ConstructorPageState extends State<ConstructorPage> {
   final Map<int, TextEditingController> _expensesControllers = {};
 
   File? _profileImage;
+  String? _profileBase64;
   bool _isEditingProfile = false;
   int? _showBudgetForm;
   int? _showRejectForm;
@@ -37,6 +39,7 @@ class _ConstructorPageState extends State<ConstructorPage> {
     super.initState();
     _loadProjects();
     _loadUserProfile();
+    _loadProfilePicture();
   }
 
   void _loadProjects() async {
@@ -54,6 +57,13 @@ class _ConstructorPageState extends State<ConstructorPage> {
       _addressController.text = data['address'] ?? '';
       _bioController.text = data['bio'] ?? '';
     }
+  }
+
+  void _loadProfilePicture() async {
+    final base64 = await ApiService.fetchProfilePicture(widget.constructorName);
+    setState(() {
+      _profileBase64 = base64;
+    });
   }
 
   void _addBudgetRow() {
@@ -118,6 +128,44 @@ class _ConstructorPageState extends State<ConstructorPage> {
       setState(() {
         _profileImage = File(picked.path);
       });
+      final uploaded = await api.uploadProfilePicture(widget.constructorName, _profileImage!);
+      if (uploaded) {
+        _loadProfilePicture();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile picture uploaded!')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to upload picture!')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Delete Account"),
+        content: const Text("Are you sure you want to delete your account? This action cannot be undone."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final deleted = await api.deleteAccount(widget.constructorName);
+      if (deleted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account deleted!')),
+        );
+        // Navigator.of(context).pushReplacement(...);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete account!')),
+        );
+      }
     }
   }
 
@@ -298,8 +346,14 @@ class _ConstructorPageState extends State<ConstructorPage> {
         children: [
           CircleAvatar(
             radius: 50,
-            backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null,
-            child: _profileImage == null ? const Icon(Icons.person, size: 50) : null,
+            backgroundImage: _profileImage != null
+                ? FileImage(_profileImage!)
+                : (_profileBase64 != null && _profileBase64!.isNotEmpty
+                    ? MemoryImage(base64Decode(_profileBase64!))
+                    : null) as ImageProvider<Object>?,
+            child: (_profileImage == null && (_profileBase64 == null || _profileBase64!.isEmpty))
+                ? const Icon(Icons.person, size: 50)
+                : null,
           ),
           TextButton.icon(
             icon: const Icon(Icons.upload),
@@ -352,6 +406,13 @@ class _ConstructorPageState extends State<ConstructorPage> {
                 ),
               ],
             ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            label: const Text("Delete Account", style: TextStyle(color: Colors.red)),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.white),
+            onPressed: _deleteAccount,
+          ),
         ],
       ),
     );
