@@ -155,4 +155,29 @@ class ApiService {
     final res = await http.delete(Uri.parse('$base/user/$username'));
     return res.statusCode == 200;
   }
+
+  /// Fetch all users (admin)
+  static Future<List<dynamic>> fetchAllUsers() async {
+    final res = await http.get(Uri.parse('$base/user/all'));
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body);
+    }
+    return [];
+  }
+
+  /// Admin add user
+  static Future<bool> adminAddUser(Map<String, dynamic> data) async {
+    final res = await http.post(
+      Uri.parse('$base/user/add'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(data),
+    );
+    return res.statusCode == 200;
+  }
+
+  /// Admin delete user
+  static Future<bool> adminDeleteUser(String username) async {
+    final res = await http.delete(Uri.parse('$base/user/admin/$username'));
+    return res.statusCode == 200;
+  }
 }
